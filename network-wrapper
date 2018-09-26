@@ -30,10 +30,14 @@ case "$1" in
       WAIT=1
       ;;
     inspect)
-      HWAddr=$(docker exec $GUESTNAME ip addr show eth0 |grep -E "ether" | awk '{print $2}')
-      Gateway=$(docker exec $GUESTNAME ip route list | grep default | awk '{print $3}')
-      IPAddress=$(docker exec $GUESTNAME ip addr show eth0 |grep -E "inet[ ]" | awk '{print $2}')
-      DNS=($(docker exec $GUESTNAME cat /etc/resolv.conf | grep nameserver | awk '{print $2}'))
+      DockerNS=$(docker inspect -f '{{.State.Pid}}' $GUESTNAME)
+      # HWAddr=$(docker exec $GUESTNAME ip addr show eth0 |grep -E "ether" | awk '{print $2}')
+      HWAddr=$(nsenter -t $DockerNS -n ip addr show eth0 |grep -E "ether" | awk '{print $2}')
+      # Gateway=$(docker exec $GUESTNAME ip route list | grep default | awk '{print $3}')
+      Gateway=$(nsenter -t $DockerNS -n ip route list | grep default | awk '{print $3}')
+      # IPAddress=$(docker exec $GUESTNAME ip addr show eth0 |grep -E "inet[ ]" | awk '{print $2}')
+      IPAddress=$(nsenter -t $DockerNS -n ip addr show eth0 |grep -E "inet[ ]" | awk '{print $2}')
+      DNS=($(nsenter -t $DockerNS -n cat /etc/resolv.conf | grep nameserver | awk '{print $2}'))
       Bridge=$(brctl show | head -2 | tail -1 |  awk '{print $1}')
       echo '{ 
  	"Container": "'$GUESTNAME'",
@@ -232,7 +236,13 @@ then
      if [ $DHCP_CLIENT = "dhclient"  ]
     then
         SHORTGUESTNAME=${GUESTNAME:0:12}
-	ip netns exec $NSPID $DHCP_CLIENT -pf "/var/run/dhclient-docker.$SHORTGUESTNAME.pid" -H $SHORTGUESTNAME $CONTAINER_IFNAME
+	DHCLIENTCONF=/var/run/dhclient-docker.$SHORTGUESTNAME.conf
+	echo 'interface "eth0" {' >> $DHCLIENTCONF
+	echo -e "\t send host-name "$SHORTGUESTNAME"; " >> $DHCLIENTCONF
+	echo "}" >> $DHCLIENTCONF
+	cat $DHCLIENTCONF
+
+ 	ip netns exec $NSPID $DHCP_CLIENT -pf "/var/run/dhclient-docker.$SHORTGUESTNAME.pid" -cf $DHCLIENTCONF $CONTAINER_IFNAME
     fi
 else
     echo "only udhcpc / dhclient currently supported"
@@ -249,7 +259,7 @@ fi
 
 # Print some useful info
 if [ $DEBUG -eq 1 ] ; then
-  network-wrapper inspect $SHORTGUESTNAME
+  ./network-wrapper inspect $SHORTGUESTNAME
 fi
 # Remove NSPID to avoid `ip netns` catch it.
 [ -f /var/run/netns/$NSPID ] && rm -f /var/run/netns/$NSPID
