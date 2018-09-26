@@ -13,7 +13,7 @@ diff(){
 
 
 DHCP=($(ps ax |grep dhclient[-]docker | cut -d. -f2))
-DOCKER=($(docker ps -q))
+DOCKER=($(docker ps -q -f network=none ))
 
 ZOMBIE=($(diff DHCP[@] DOCKER[@]))
 if [ ! -z $ZOMBIE ] ; then 
@@ -23,12 +23,14 @@ for i in ${ZOMBIE[@]} ; do
     echo "stopping orphan container"
     docker stop $i
   fi
-  PIDFILE=$(ls -a /var/run/dhclient-docker.*$i*)
+  PIDFILE=$(ls -a /var/run/dhclient-docker.*$i*.pid)
   if [ ! -z $PIDFILE ]; then
     KPID=$(cat $PIDFILE)
     kill -9 $KPID 2>/dev/null
   fi
-  rm -f $PIDFILE 2>/dev/null
+  echo rm -f $PIDFILE 2>/dev/null
+  CFGFILE=$(ls -a /var/run/dhclient-docker.*$i*.conf)
+  rm -f $CFGFILE 2>/dev/null
   echo -n .
 done
 fi
